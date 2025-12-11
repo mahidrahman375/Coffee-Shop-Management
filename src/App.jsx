@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ShoppingCart, Plus, Minus, Trash2, Coffee, CheckCircle, ChevronUp, ChevronDown, AlertCircle } from 'lucide-react';
+import { ShoppingCart, Plus, Minus, Trash2, Coffee, CheckCircle, ChevronUp, ChevronDown, AlertCircle, X } from 'lucide-react';
 import ReceiptGenerator from './ReceiptGenerator.jsx';
 import TopItems from './TopItems.jsx';
 import { supabase } from './lib/supabase';
@@ -16,8 +16,9 @@ export default function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState(null);
   const [isCartExpanded, setIsCartExpanded] = useState(false);
-  const [error, setError] = useState(null); // For displaying errors
-  const [loading, setLoading] = useState(true); // Loading state
+  const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [cartHeight, setCartHeight] = useState('auto'); // For dynamic cart height
 
   useEffect(() => {
     initializeApp();
@@ -93,46 +94,40 @@ export default function App() {
           )
         `)
         .eq('table_id', table.id)
-        .eq('status', 'pending')
-        .single();
+        .eq('status', 'pending');
       
       console.log('Existing order data:', existingOrder);
       console.log('Order error:', orderError);
 
       setSelectedTable(table);
       
-      // If there's no error OR if the error is just "no rows returned" (which is normal)
-      if (!orderError || orderError.code === 'PGRST116') {
-        if (existingOrder) {
-          setActiveOrder(existingOrder);
-          // Safely load existing items into cart
-          const cartItems = (existingOrder.order_details || []).map(detail => ({
-            id: detail.menu_item_id,
-            name: detail.menu_items?.name || `Item ${detail.menu_item_id}`,
-            price: detail.price || 0,
-            quantity: detail.quantity || 1,
-            order_detail_id: detail.id
-          })).filter(item => item.id);
-          
-          setCart(cartItems);
-        } else {
-          // No existing order, clear cart
-          setCart([]);
-          setActiveOrder(null);
-        }
-        
-        setView('menu');
-      } else {
-        // Handle other errors
+      if (orderError) {
         console.error('Error loading table order:', orderError);
         setError(`Error loading order: ${orderError.message}`);
+      }
+      
+      // Use the first pending order if exists
+      if (existingOrder && existingOrder.length > 0) {
+        const order = existingOrder[0];
+        setActiveOrder(order);
         
-        // Still proceed to menu with empty cart
-        setSelectedTable(table);
+        // Safely load existing items into cart
+        const cartItems = (order.order_details || []).map(detail => ({
+          id: detail.menu_item_id,
+          name: detail.menu_items?.name || `Item ${detail.menu_item_id}`,
+          price: detail.price || 0,
+          quantity: detail.quantity || 1,
+          order_detail_id: detail.id
+        })).filter(item => item.id);
+        
+        setCart(cartItems);
+      } else {
+        // No existing order, clear cart
         setCart([]);
         setActiveOrder(null);
-        setView('menu');
       }
+      
+      setView('menu');
       
     } catch (error) {
       console.error('Error in selectTable:', error);
@@ -233,8 +228,8 @@ export default function App() {
             table_id: selectedTable.id,
             total_amount: calculatedTotal,
             status: 'pending',
-            payment_status: 'pending',
             payment_method: selectedPaymentMethod,
+            payment_status: 'pending',
             created_at: new Date().toISOString()
           })
           .select()
@@ -258,13 +253,13 @@ export default function App() {
           
         setActiveOrder(newOrder);
       } else {
-        // Update existing order with payment method
+        // Update existing order with payment method - REMOVED updated_at column
         const { error: updateError } = await supabase
           .from('orders')
           .update({ 
             total_amount: calculatedTotal,
-            payment_method: selectedPaymentMethod,
-            updated_at: new Date().toISOString()
+            payment_method: selectedPaymentMethod
+            // REMOVED: updated_at: new Date().toISOString()
           })
           .eq('id', orderId);
 
@@ -284,14 +279,14 @@ export default function App() {
         );
         
         if (existingDetail && item.order_detail_id) {
-          // Update existing item
+          // Update existing item - REMOVED updated_at column
           const { error: updateDetailError } = await supabase
             .from('order_details')
             .update({
               quantity: item.quantity,
               price: item.price,
-              subtotal: subtotal,
-              updated_at: new Date().toISOString()
+              subtotal: subtotal
+              // REMOVED: updated_at: new Date().toISOString()
             })
             .eq('id', item.order_detail_id);
 
@@ -320,6 +315,38 @@ export default function App() {
       });
 
       await Promise.all(orderDetailsPromises);
+
+      // For new orders only, deduct ingredients
+      if (isNewOrder) {
+        for (const item of cart) {
+          const { data: itemIngredients, error: ingredientsError } = await supabase
+            .from('item_ingredients')
+            .select('*, ingredients(*)')
+            .eq('menu_item_id', item.id);
+
+          if (ingredientsError) {
+            console.error('Error fetching ingredients:', ingredientsError);
+            continue;
+          }
+
+          if (itemIngredients) {
+            for (const ii of itemIngredients) {
+              const quantityToDeduct = ii.quantity_needed * item.quantity;
+              const newStock = ii.ingredients.stock_quantity - quantityToDeduct;
+              
+              if (newStock < 0) {
+                console.warn(`Insufficient stock for ingredient ${ii.ingredients.name}`);
+                continue;
+              }
+              
+              await supabase
+                .from('ingredients')
+                .update({ stock_quantity: newStock })
+                .eq('id', ii.ingredient_id);
+            }
+          }
+        }
+      }
 
       // Fetch complete order with details
       const { data: finalOrder, error: fetchError } = await supabase
@@ -398,6 +425,7 @@ export default function App() {
     setGeneratedReceipt(null);
     setSelectedPaymentMethod(null);
     setError(null);
+    setIsCartExpanded(false);
     loadTables();
   };
 
@@ -414,9 +442,9 @@ export default function App() {
           </div>
           <button
             onClick={() => setError(null)}
-            className="text-red-600 hover:text-red-800 text-sm font-medium"
+            className="text-red-600 hover:text-red-800 text-sm font-medium flex-shrink-0"
           >
-            Dismiss
+            <X className="w-4 h-4" />
           </button>
         </div>
       </div>
@@ -478,14 +506,21 @@ export default function App() {
     );
   }
 
-  // Rest of your views (menu and order-success) with ErrorAlert component added
-  // ... [Keep your existing menu and order-success views, but add ErrorAlert at the top]
-
   if (view === 'menu') {
+    // Calculate cart height based on content
+    const calculateCartHeight = () => {
+      const baseHeight = 80; // Base height for header and button
+      const itemsHeight = cart.length > 0 ? (isCartExpanded ? Math.min(cart.length * 80, 320) : 0) : 0;
+      const paymentHeight = 120; // Height for payment section
+      return baseHeight + itemsHeight + paymentHeight;
+    };
+
     return (
-      <div className="min-h-screen bg-gray-50 pb-32">
+      <div className="min-h-screen bg-gray-50">
         <ErrorAlert />
-        <div className="bg-white shadow-sm sticky top-0 z-10">
+        
+        {/* Fixed Header */}
+        <div className="bg-white shadow-sm sticky top-0 z-20">
           <div className="max-w-7xl mx-auto px-4 py-4">
             <div className="flex items-center justify-between">
               <div>
@@ -499,7 +534,7 @@ export default function App() {
               </div>
               <button
                 onClick={() => setView('table-selection')}
-                className="px-4 py-2 text-gray-600 hover:text-gray-800"
+                className="px-4 py-2 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition"
               >
                 Change Table
               </button>
@@ -507,7 +542,11 @@ export default function App() {
           </div>
         </div>
 
-        <div className="max-w-7xl mx-auto px-4 py-6">
+        {/* Menu Items with Bottom Padding for Cart */}
+        <div 
+          className="max-w-7xl mx-auto px-4 py-6"
+          style={{ paddingBottom: `${calculateCartHeight() + 20}px` }} // Dynamic padding
+        >
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {menuItems.map(item => (
               <div key={item.id} className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition">
@@ -529,113 +568,128 @@ export default function App() {
           </div>
         </div>
 
+        {/* Fixed Bottom Cart - Now properly positioned */}
         {cart.length > 0 && (
-          <div className="fixed bottom-0 left-0 right-0 bg-white border-t-2 border-amber-200 shadow-lg">
-            <div className="max-w-7xl mx-auto px-4 py-4">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={() => setIsCartExpanded(!isCartExpanded)}
-                    className="text-gray-500 hover:text-gray-700"
-                  >
-                    {isCartExpanded ? <ChevronDown className="w-5 h-5" /> : <ChevronUp className="w-5 h-5" />}
-                  </button>
-                  <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-                    <ShoppingCart className="w-5 h-5" />
-                    Your Cart ({cart.length} items)
-                    {activeOrder && (
-                      <span className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded">
-                        Updating Order #{activeOrder.id}
-                      </span>
-                    )}
-                  </h3>
+          <div 
+            className="fixed bottom-0 left-0 right-0 bg-white border-t-2 border-amber-200 shadow-xl transition-all duration-300"
+            style={{ 
+              height: `${calculateCartHeight()}px`,
+              transform: 'translateY(0)'
+            }}
+          >
+            <div className="max-w-7xl mx-auto h-full flex flex-col">
+              <div className="px-4 py-4 flex-1 overflow-y-auto">
+                {/* Cart Header */}
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => setIsCartExpanded(!isCartExpanded)}
+                      className="text-gray-500 hover:text-gray-700"
+                    >
+                      {isCartExpanded ? <ChevronDown className="w-5 h-5" /> : <ChevronUp className="w-5 h-5" />}
+                    </button>
+                    <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                      <ShoppingCart className="w-5 h-5" />
+                      Your Cart ({cart.length} items)
+                      {activeOrder && (
+                        <span className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded">
+                          Updating Order #{activeOrder.id}
+                        </span>
+                      )}
+                    </h3>
+                  </div>
+                  <div className="text-2xl font-bold text-amber-600">
+                    Total: ৳{calculateTotal().toFixed(2)}
+                  </div>
                 </div>
-                <div className="text-2xl font-bold text-amber-600">
-                  Total: ৳{calculateTotal().toFixed(2)}
-                </div>
-              </div>
 
-              {isCartExpanded && (
-                <div className="space-y-2 mb-4 max-h-64 overflow-y-auto pr-2">
-                  {cart.map(item => (
-                    <div key={item.id} className="flex items-center justify-between bg-gray-50 p-3 rounded-lg">
-                      <div className="flex-1">
-                        <div className="font-medium text-gray-800">{item.name}</div>
-                        <div className="text-sm text-gray-600">৳{item.price} each</div>
-                        {item.order_detail_id && (
-                          <div className="text-xs text-green-600">✓ Already in order</div>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <button
-                          onClick={() => updateQuantity(item.id, -1)}
-                          className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center hover:bg-gray-300"
-                        >
-                          <Minus className="w-4 h-4" />
-                        </button>
-                        <span className="w-8 text-center font-bold">{item.quantity}</span>
-                        <button
-                          onClick={() => updateQuantity(item.id, 1)}
-                          className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center hover:bg-gray-300"
-                        >
-                          <Plus className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => removeFromCart(item.id)}
-                          className="w-8 h-8 bg-red-100 text-red-600 rounded-full flex items-center justify-center hover:bg-red-200 ml-2"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                        <div className="w-20 text-right font-bold text-gray-800">
-                          ৳{(item.price * item.quantity).toFixed(2)}
+                {/* Cart Items - Scrollable */}
+                {isCartExpanded && (
+                  <div className="space-y-2 mb-4 max-h-64 overflow-y-auto pr-2">
+                    {cart.map(item => (
+                      <div key={item.id} className="flex items-center justify-between bg-gray-50 p-3 rounded-lg">
+                        <div className="flex-1">
+                          <div className="font-medium text-gray-800">{item.name}</div>
+                          <div className="text-sm text-gray-600">৳{item.price} each</div>
+                          {item.order_detail_id && (
+                            <div className="text-xs text-green-600">✓ Already in order</div>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={() => updateQuantity(item.id, -1)}
+                            className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center hover:bg-gray-300"
+                          >
+                            <Minus className="w-4 h-4" />
+                          </button>
+                          <span className="w-8 text-center font-bold">{item.quantity}</span>
+                          <button
+                            onClick={() => updateQuantity(item.id, 1)}
+                            className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center hover:bg-gray-300"
+                          >
+                            <Plus className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => removeFromCart(item.id)}
+                            className="w-8 h-8 bg-red-100 text-red-600 rounded-full flex items-center justify-center hover:bg-red-200 ml-2"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                          <div className="w-20 text-right font-bold text-gray-800">
+                            ৳{(item.price * item.quantity).toFixed(2)}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <div className="mb-4">
-                <h4 className="font-bold text-gray-700 mb-2">Select Payment Method:</h4>
-                <div className="grid grid-cols-3 gap-2">
-                  {['cash', 'card', 'mobile_banking'].map(method => (
-                    <button
-                      key={method}
-                      onClick={() => selectPaymentMethod(method)}
-                      className={`p-3 rounded-lg border-2 transition ${
-                        selectedPaymentMethod === method
-                          ? 'border-green-500 bg-green-50 text-green-700'
-                          : 'border-gray-300 hover:border-amber-500 hover:bg-amber-50'
-                      }`}
-                    >
-                      <div className="font-medium capitalize">{method.replace('_', ' ')}</div>
-                      {selectedPaymentMethod === method && (
-                        <div className="text-xs mt-1">✓ Selected</div>
-                      )}
-                    </button>
-                  ))}
-                </div>
-                {!selectedPaymentMethod && cart.length > 0 && (
-                  <p className="text-sm text-red-600 mt-2">
-                    ⚠️ Please select a payment method to place your order
-                  </p>
+                    ))}
+                  </div>
                 )}
+
+                {/* Payment Method Selection - FIXED: No unnecessary updates */}
+                <div className="mb-4">
+                  <h4 className="font-bold text-gray-700 mb-2">Select Payment Method:</h4>
+                  <div className="grid grid-cols-3 gap-2">
+                    {['cash', 'card', 'mobile_banking'].map(method => (
+                      <button
+                        key={method}
+                        onClick={() => selectPaymentMethod(method)}
+                        className={`p-3 rounded-lg border-2 transition ${
+                          selectedPaymentMethod === method
+                            ? 'border-green-500 bg-green-50 text-green-700'
+                            : 'border-gray-300 hover:border-amber-500 hover:bg-amber-50'
+                        }`}
+                      >
+                        <div className="font-medium capitalize">{method.replace('_', ' ')}</div>
+                        {selectedPaymentMethod === method && (
+                          <div className="text-xs mt-1">✓ Selected</div>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                  {!selectedPaymentMethod && cart.length > 0 && (
+                    <p className="text-sm text-red-600 mt-2">
+                      ⚠️ Please select a payment method to place your order
+                    </p>
+                  )}
+                </div>
               </div>
 
-              <button
-                onClick={placeOrder}
-                disabled={isProcessing || !selectedPaymentMethod}
-                className={`w-full py-4 rounded-lg font-bold text-lg transition ${
-                  selectedPaymentMethod
-                    ? 'bg-amber-500 text-white hover:bg-amber-600'
-                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                } ${isProcessing ? 'opacity-50 cursor-not-allowed' : ''}`}
-              >
-                {isProcessing ? 'Processing...' : 
-                 activeOrder ? `Update Order - ৳${calculateTotal().toFixed(2)}` : 
-                 selectedPaymentMethod ? `Place Order - ৳${calculateTotal().toFixed(2)}` :
-                 'Select Payment Method First'}
-              </button>
+              {/* Order Button - Fixed at bottom of cart */}
+              <div className="px-4 py-4 border-t border-gray-200">
+                <button
+                  onClick={placeOrder}
+                  disabled={isProcessing || !selectedPaymentMethod}
+                  className={`w-full py-4 rounded-lg font-bold text-lg transition ${
+                    selectedPaymentMethod
+                      ? 'bg-amber-500 text-white hover:bg-amber-600'
+                      : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  } ${isProcessing ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  {isProcessing ? 'Processing...' : 
+                   activeOrder ? `Update Order - ৳${calculateTotal().toFixed(2)}` : 
+                   selectedPaymentMethod ? `Place Order - ৳${calculateTotal().toFixed(2)}` :
+                   'Select Payment Method First'}
+                </button>
+              </div>
             </div>
           </div>
         )}
