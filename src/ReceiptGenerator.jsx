@@ -1,9 +1,29 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Download } from 'lucide-react';
 
-export default function ReceiptGenerator({ orderData, onDownload }) {
+export default function ReceiptGenerator({ orderData, onDownload, onError }) {
+  const [isGenerating, setIsGenerating] = useState(false);
+
   const generateReceipt = async () => {
     try {
+      // Validate order data
+      if (!orderData) {
+        throw new Error('No order data available');
+      }
+
+      if (!orderData.items || !Array.isArray(orderData.items) || orderData.items.length === 0) {
+        console.warn('Receipt items:', orderData.items);
+        throw new Error('No items in order');
+      }
+
+      // Validate numeric values
+      const total = parseFloat(orderData.total);
+      if (isNaN(total) || total <= 0) {
+        throw new Error('Invalid total amount');
+      }
+
+      setIsGenerating(true);
+
       // Dynamic imports
       const { jsPDF } = await import('jspdf');
       
@@ -45,8 +65,8 @@ export default function ReceiptGenerator({ orderData, onDownload }) {
       
       let yPos = startY + 10;
       
-      // Add items
-      orderData.items.forEach((item, index) => {
+      // Add items - with better error handling
+      (orderData.items || []).forEach((item, index) => {
         if (index > 0) yPos += 10;
         
         doc.setFontSize(10);
@@ -58,9 +78,12 @@ export default function ReceiptGenerator({ orderData, onDownload }) {
         
         doc.text(String(item.quantity || 1), 100, yPos);
         
-        // Use "BDT" instead of symbol that might not render
-        doc.text(`BDT ${(item.price || 0).toFixed(2)}`, 130, yPos);
-        doc.text(`BDT ${(item.subtotal || 0).toFixed(2)}`, 170, yPos);
+        // Ensure price is a number
+        const price = parseFloat(item.price) || 0;
+        const subtotal = parseFloat(item.subtotal) || (price * (item.quantity || 1));
+        
+        doc.text(`BDT ${price.toFixed(2)}`, 130, yPos);
+        doc.text(`BDT ${subtotal.toFixed(2)}`, 170, yPos);
         
         yPos += 10;
       });
@@ -73,7 +96,7 @@ export default function ReceiptGenerator({ orderData, onDownload }) {
       yPos += 15;
       doc.setFontSize(14);
       doc.setTextColor(0, 0, 0);
-      doc.text(`TOTAL: BDT ${(orderData.total || 0).toFixed(2)}`, 150, yPos);
+      doc.text(`TOTAL: BDT ${total.toFixed(2)}`, 150, yPos);
       
       // Footer
       yPos += 20;
@@ -92,17 +115,28 @@ export default function ReceiptGenerator({ orderData, onDownload }) {
       
     } catch (error) {
       console.error('Error generating receipt:', error);
-      alert('Error generating receipt. Please try again.');
+      
+      // Notify parent component about the error
+      if (onError) {
+        onError(error.message);
+      } else {
+        alert(`Error generating receipt: ${error.message}. Please try again.`);
+      }
+    } finally {
+      setIsGenerating(false);
     }
   };
 
   return (
     <button
       onClick={generateReceipt}
-      className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition"
+      disabled={isGenerating || !orderData}
+      className={`flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition ${
+        isGenerating ? 'opacity-50 cursor-not-allowed' : ''
+      }`}
     >
       <Download className="w-4 h-4" />
-      Download Receipt (PDF)
+      {isGenerating ? 'Generating...' : 'Download Receipt (PDF)'}
     </button>
   );
 }
