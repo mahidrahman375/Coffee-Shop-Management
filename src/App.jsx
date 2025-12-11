@@ -299,7 +299,7 @@ export default function App() {
         }
       }
 
-      // Delete all existing order details and re-add them
+      // Delete all existing order details and re-add them (fresh update)
       if (activeOrder) {
         await supabase
           .from('order_details')
@@ -387,7 +387,7 @@ export default function App() {
       setGeneratedReceipt(receiptData);
       setView('order-success');
       
-      setCart([]);
+      // DO NOT clear cart here - keep items for "Add More Items"
       setSelectedPaymentMethod(null);
       
       localStorage.removeItem(processingKey);
@@ -409,7 +409,7 @@ export default function App() {
   const startNewOrder = () => {
     setView('table-selection');
     setSelectedTable(null);
-    setCart([]);
+    setCart([]); // Clear cart only when starting new order
     setActiveOrder(null);
     setOrderSummary(null);
     setGeneratedReceipt(null);
@@ -417,6 +417,67 @@ export default function App() {
     setError(null);
     setIsCartExpanded(false);
     loadTables();
+  };
+
+  const loadOrderIntoCart = async (orderId) => {
+    try {
+      const { data: order, error } = await supabase
+        .from('orders')
+        .select(`
+          *,
+          order_details(
+            *,
+            menu_items(*)
+          )
+        `)
+        .eq('id', orderId)
+        .single();
+      
+      if (error) throw error;
+      
+      if (order) {
+        setActiveOrder(order);
+        
+        // Merge duplicate items
+        const existingItems = (order.order_details || []);
+        const mergedItems = existingItems.reduce((acc, detail) => {
+          const existing = acc.find(item => item.menu_item_id === detail.menu_item_id);
+          if (existing) {
+            existing.quantity += detail.quantity;
+          } else {
+            acc.push({
+              menu_item_id: detail.menu_item_id,
+              quantity: detail.quantity,
+              price: detail.price,
+              order_detail_id: detail.id
+            });
+          }
+          return acc;
+        }, []);
+        
+        // Get menu item names
+        const cartItems = await Promise.all(mergedItems.map(async (item) => {
+          const { data: menuItem } = await supabase
+            .from('menu_items')
+            .select('name')
+            .eq('id', item.menu_item_id)
+            .single();
+          
+          return {
+            id: item.menu_item_id,
+            name: menuItem?.name || `Item ${item.menu_item_id}`,
+            price: item.price || 0,
+            quantity: item.quantity || 1,
+            order_detail_id: item.order_detail_id
+          };
+        }));
+        
+        setCart(cartItems.filter(item => item.id));
+      }
+    } catch (err) {
+      console.error('Error loading order into cart:', err);
+      throw err;
+    }
   };
 
   const ErrorAlert = () => {
@@ -684,11 +745,6 @@ export default function App() {
   }
 
   if (view === 'order-success') {
-    // Debug logging
-    console.log('Full orderSummary:', orderSummary);
-    console.log('Order total_amount:', orderSummary?.total_amount);
-    console.log('Order details:', orderSummary?.order_details);
-    
     // Merge duplicate items in order summary
     const mergedOrderDetails = orderSummary?.order_details?.reduce((acc, detail) => {
       const existing = acc.find(d => d.menu_items?.name === detail.menu_items?.name);
@@ -707,9 +763,6 @@ export default function App() {
     
     // Use either orderSummary.total_amount or calculated total
     const displayTotal = orderSummary?.total_amount || actualTotal;
-    
-    console.log('Calculated total from items:', actualTotal);
-    console.log('Final display total:', displayTotal);
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-50 flex items-center justify-center p-6">
@@ -783,8 +836,18 @@ export default function App() {
 
           <div className="flex gap-3">
             <button
-              onClick={() => {
-                setView('menu');
+              onClick={async () => {
+                try {
+                  // Load the complete order from database to refresh cart with ALL items
+                  if (orderSummary?.id) {
+                    await loadOrderIntoCart(orderSummary.id);
+                  }
+                  setView('menu');
+                } catch (err) {
+                  console.error('Error loading order for editing:', err);
+                  setError('Failed to load order. Please try again.');
+                  setView('menu');
+                }
               }}
               className="flex-1 bg-amber-100 text-amber-700 py-3 rounded-lg font-bold hover:bg-amber-200 transition"
             >
