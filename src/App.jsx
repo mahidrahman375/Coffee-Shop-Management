@@ -850,17 +850,25 @@ export default function App() {
                 </div>
                 <ReceiptGenerator 
                   orderData={{
-                    ...generatedReceipt,
+                    orderId: orderSummary?.id || generatedReceipt?.orderId,
+                    tableNumber: selectedTable?.table_number,
                     items: mergedOrderDetails.map(detail => ({
                       name: detail.menu_items?.name || 'Item',
-                      quantity: detail.quantity,
-                      price: detail.price,
-                      subtotal: detail.subtotal || (detail.price * detail.quantity)
+                      quantity: detail.quantity || 1,
+                      price: parseFloat(detail.price) || 0,
+                      subtotal: parseFloat(detail.subtotal) || (parseFloat(detail.price) || 0) * (detail.quantity || 1)
                     })),
-                    total: displayTotal && !isNaN(displayTotal) ? displayTotal : actualTotal
+                    total: displayTotal && !isNaN(displayTotal) ? displayTotal : actualTotal,
+                    paymentMethod: orderSummary?.payment_method || selectedPaymentMethod,
+                    date: new Date(orderSummary?.created_at || new Date()).toLocaleString()
                   }} 
                   onDownload={() => {
-                    alert('Receipt downloaded successfully!');
+                    // Success callback
+                    console.log('Receipt downloaded successfully');
+                  }}
+                  onError={(errorMessage) => {
+                    // Error callback
+                    setError(`Receipt generation failed: ${errorMessage}`);
                   }}
                 />
               </div>
