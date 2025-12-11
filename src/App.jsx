@@ -137,13 +137,16 @@ export default function App() {
       }
       localStorage.setItem(processingKey, 'true');
 
+      // Calculate total from ALL items in cart
+      const newTotal = calculateTotal();
+
       if (!activeOrder) {
         // Create new order
         const { data: newOrder, error: orderError } = await supabase
           .from('orders')
           .insert({
             table_id: selectedTable.id,
-            total_amount: calculateTotal(),
+            total_amount: newTotal,
             status: 'pending',
             payment_status: 'pending',
             created_at: new Date().toISOString()
@@ -181,33 +184,51 @@ export default function App() {
           
         setActiveOrder(newOrder);
       } else {
-        // Update existing order
+        // Update existing order with new total
         await supabase
           .from('orders')
           .update({ 
-            total_amount: calculateTotal(),
+            total_amount: newTotal,
             updated_at: new Date().toISOString()
           })
           .eq('id', orderId);
       }
 
-      // Handle order details - add new items or update existing ones
+      // Handle order details - FIXED LOGIC
+      const allItemIdsInCart = cart.map(item => item.id);
+      
+      // First, remove any items from the order that are NOT in the cart
+      if (activeOrder?.order_details) {
+        const detailsToRemove = activeOrder.order_details.filter(
+          detail => !allItemIdsInCart.includes(detail.menu_item_id)
+        );
+        
+        for (const detail of detailsToRemove) {
+          await supabase
+            .from('order_details')
+            .delete()
+            .eq('id', detail.id);
+        }
+      }
+
+      // Then, update or insert all items in cart
       for (const item of cart) {
         // Check if item already exists in this order
         const existingDetail = activeOrder?.order_details?.find(
           detail => detail.menu_item_id === item.id
         );
         
-        if (existingDetail && item.order_detail_id) {
-          // Update existing item
+        if (existingDetail) {
+          // Update existing item with new quantity
           await supabase
             .from('order_details')
             .update({
               quantity: item.quantity,
+              price: item.price,
               subtotal: item.price * item.quantity,
               updated_at: new Date().toISOString()
             })
-            .eq('id', item.order_detail_id);
+            .eq('id', existingDetail.id);
         } else {
           // Add new item
           await supabase
@@ -265,6 +286,23 @@ export default function App() {
 
       if (fetchError) throw fetchError;
 
+      // Validate and correct total if needed
+      const calculatedTotal = finalOrder.order_details.reduce(
+        (sum, detail) => sum + (detail.price * detail.quantity), 
+        0
+      );
+
+      if (Math.abs(finalOrder.total_amount - calculatedTotal) > 0.01) {
+        console.log('Correcting total mismatch:', finalOrder.total_amount, '->', calculatedTotal);
+        // Update with correct total
+        await supabase
+          .from('orders')
+          .update({ total_amount: calculatedTotal })
+          .eq('id', orderId);
+        
+        finalOrder.total_amount = calculatedTotal;
+      }
+
       setOrderSummary(finalOrder);
       
       // Generate receipt data
@@ -313,7 +351,21 @@ export default function App() {
     alert(`Payment method selected: ${method}. Please wait for confirmation from staff.`);
   };
 
-  const startNewOrder = () => {
+  const startNewOrder = async () => {
+    if (activeOrder) {
+      // Mark order as completed
+      await supabase
+        .from('orders')
+        .update({ status: 'completed' })
+        .eq('id', activeOrder.id);
+      
+      // Free up the table
+      await supabase
+        .from('tables')
+        .update({ status: 'free' })
+        .eq('id', selectedTable.id);
+    }
+    
     setView('table-selection');
     setSelectedTable(null);
     setCart([]);
@@ -504,7 +556,7 @@ export default function App() {
               {orderSummary?.order_details?.map((detail, idx) => (
                 <div key={idx} className="flex justify-between text-gray-700">
                   <span>{detail.menu_items?.name || 'Item'} × {detail.quantity}</span>
-                  <span className="font-medium">৳{detail.subtotal?.toFixed(2)}</span>
+                  <span className="font-medium">৳{(detail.price * detail.quantity).toFixed(2)}</span>
                 </div>
               ))}
             </div>
