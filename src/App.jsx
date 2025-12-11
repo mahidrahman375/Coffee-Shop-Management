@@ -15,6 +15,7 @@ export default function App() {
   const [orderSummary, setOrderSummary] = useState(null);
   const [generatedReceipt, setGeneratedReceipt] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState(null); // NEW STATE
 
   useEffect(() => {
     loadTables();
@@ -96,7 +97,7 @@ export default function App() {
       setCart([...cart, { 
         ...item, 
         quantity: 1,
-        order_detail_id: null // Will be set if updating existing item
+        order_detail_id: null
       }]);
     }
   };
@@ -122,6 +123,12 @@ export default function App() {
   const placeOrder = async () => {
     if (cart.length === 0 || isProcessing) return;
 
+    // Check if payment method is selected
+    if (!selectedPaymentMethod) {
+      alert('Please select a payment method before placing the order.');
+      return;
+    }
+
     setIsProcessing(true);
 
     try {
@@ -137,18 +144,16 @@ export default function App() {
       }
       localStorage.setItem(processingKey, 'true');
 
-      // Calculate total from ALL items in cart
-      const newTotal = calculateTotal();
-
       if (!activeOrder) {
-        // Create new order
+        // Create new order WITH payment method
         const { data: newOrder, error: orderError } = await supabase
           .from('orders')
           .insert({
             table_id: selectedTable.id,
-            total_amount: newTotal,
+            total_amount: calculateTotal(),
             status: 'pending',
             payment_status: 'pending',
+            payment_method: selectedPaymentMethod, // Added payment method
             created_at: new Date().toISOString()
           })
           .select()
@@ -184,51 +189,34 @@ export default function App() {
           
         setActiveOrder(newOrder);
       } else {
-        // Update existing order with new total
+        // Update existing order with payment method
         await supabase
           .from('orders')
           .update({ 
-            total_amount: newTotal,
+            total_amount: calculateTotal(),
+            payment_method: selectedPaymentMethod, // Update payment method
             updated_at: new Date().toISOString()
           })
           .eq('id', orderId);
       }
 
-      // Handle order details - FIXED LOGIC
-      const allItemIdsInCart = cart.map(item => item.id);
-      
-      // First, remove any items from the order that are NOT in the cart
-      if (activeOrder?.order_details) {
-        const detailsToRemove = activeOrder.order_details.filter(
-          detail => !allItemIdsInCart.includes(detail.menu_item_id)
-        );
-        
-        for (const detail of detailsToRemove) {
-          await supabase
-            .from('order_details')
-            .delete()
-            .eq('id', detail.id);
-        }
-      }
-
-      // Then, update or insert all items in cart
+      // Handle order details
       for (const item of cart) {
         // Check if item already exists in this order
         const existingDetail = activeOrder?.order_details?.find(
           detail => detail.menu_item_id === item.id
         );
         
-        if (existingDetail) {
-          // Update existing item with new quantity
+        if (existingDetail && item.order_detail_id) {
+          // Update existing item
           await supabase
             .from('order_details')
             .update({
               quantity: item.quantity,
-              price: item.price,
               subtotal: item.price * item.quantity,
               updated_at: new Date().toISOString()
             })
-            .eq('id', existingDetail.id);
+            .eq('id', item.order_detail_id);
         } else {
           // Add new item
           await supabase
@@ -286,23 +274,6 @@ export default function App() {
 
       if (fetchError) throw fetchError;
 
-      // Validate and correct total if needed
-      const calculatedTotal = finalOrder.order_details.reduce(
-        (sum, detail) => sum + (detail.price * detail.quantity), 
-        0
-      );
-
-      if (Math.abs(finalOrder.total_amount - calculatedTotal) > 0.01) {
-        console.log('Correcting total mismatch:', finalOrder.total_amount, '->', calculatedTotal);
-        // Update with correct total
-        await supabase
-          .from('orders')
-          .update({ total_amount: calculatedTotal })
-          .eq('id', orderId);
-        
-        finalOrder.total_amount = calculatedTotal;
-      }
-
       setOrderSummary(finalOrder);
       
       // Generate receipt data
@@ -316,6 +287,7 @@ export default function App() {
           subtotal: detail.subtotal
         })),
         total: finalOrder.total_amount,
+        paymentMethod: selectedPaymentMethod,
         date: new Date(finalOrder.created_at).toLocaleString()
       };
       
@@ -337,41 +309,19 @@ export default function App() {
     }
   };
 
-  const selectPaymentMethod = async (method) => {
-    if (!orderSummary) return;
-
-    await supabase
-      .from('orders')
-      .update({ 
-        payment_method: method,
-        payment_status: 'pending'
-      })
-      .eq('id', orderSummary.id);
-
-    alert(`Payment method selected: ${method}. Please wait for confirmation from staff.`);
+  const selectPaymentMethod = (method) => {
+    setSelectedPaymentMethod(method);
+    alert(`Payment method selected: ${method}. You can now place your order.`);
   };
 
-  const startNewOrder = async () => {
-    if (activeOrder) {
-      // Mark order as completed
-      await supabase
-        .from('orders')
-        .update({ status: 'completed' })
-        .eq('id', activeOrder.id);
-      
-      // Free up the table
-      await supabase
-        .from('tables')
-        .update({ status: 'free' })
-        .eq('id', selectedTable.id);
-    }
-    
+  const startNewOrder = () => {
     setView('table-selection');
     setSelectedTable(null);
     setCart([]);
     setActiveOrder(null);
     setOrderSummary(null);
     setGeneratedReceipt(null);
+    setSelectedPaymentMethod(null); // Reset payment method
     loadTables();
   };
 
@@ -519,14 +469,47 @@ export default function App() {
                 ))}
               </div>
 
+              {/* Payment Method Selection BEFORE placing order */}
+              <div className="mb-4">
+                <h4 className="font-bold text-gray-700 mb-2">Select Payment Method:</h4>
+                <div className="grid grid-cols-3 gap-2">
+                  {['cash', 'card', 'mobile_banking'].map(method => (
+                    <button
+                      key={method}
+                      onClick={() => selectPaymentMethod(method)}
+                      className={`p-3 rounded-lg border-2 transition ${
+                        selectedPaymentMethod === method
+                          ? 'border-green-500 bg-green-50 text-green-700'
+                          : 'border-gray-300 hover:border-amber-500 hover:bg-amber-50'
+                      }`}
+                    >
+                      <div className="font-medium capitalize">{method.replace('_', ' ')}</div>
+                      {selectedPaymentMethod === method && (
+                        <div className="text-xs mt-1">✓ Selected</div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+                {!selectedPaymentMethod && cart.length > 0 && (
+                  <p className="text-sm text-red-600 mt-2">
+                    ⚠️ Please select a payment method to place your order
+                  </p>
+                )}
+              </div>
+
               <button
                 onClick={placeOrder}
-                disabled={isProcessing}
-                className="w-full bg-amber-500 text-white py-4 rounded-lg font-bold text-lg hover:bg-amber-600 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={isProcessing || !selectedPaymentMethod}
+                className={`w-full py-4 rounded-lg font-bold text-lg transition ${
+                  selectedPaymentMethod
+                    ? 'bg-amber-500 text-white hover:bg-amber-600'
+                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                } ${isProcessing ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
                 {isProcessing ? 'Processing...' : 
                  activeOrder ? `Update Order - ৳${calculateTotal().toFixed(2)}` : 
-                 `Place Order - ৳${calculateTotal().toFixed(2)}`}
+                 selectedPaymentMethod ? `Place Order - ৳${calculateTotal().toFixed(2)}` :
+                 'Select Payment Method First'}
               </button>
             </div>
           </div>
@@ -543,6 +526,9 @@ export default function App() {
             <CheckCircle className="w-20 h-20 text-green-500 mx-auto mb-4" />
             <h1 className="text-3xl font-bold text-gray-800 mb-2">Order {activeOrder ? 'Updated' : 'Placed'} Successfully!</h1>
             <p className="text-gray-600">Table {selectedTable.table_number} • Order #{orderSummary?.id}</p>
+            <p className="text-sm text-amber-600 mt-2">
+              Payment Method: <span className="font-bold capitalize">{orderSummary?.payment_method?.replace('_', ' ') || selectedPaymentMethod?.replace('_', ' ')}</span>
+            </p>
             {activeOrder && (
               <p className="text-sm text-amber-600 mt-2">
                 ✓ Your order has been updated with additional items
@@ -556,7 +542,7 @@ export default function App() {
               {orderSummary?.order_details?.map((detail, idx) => (
                 <div key={idx} className="flex justify-between text-gray-700">
                   <span>{detail.menu_items?.name || 'Item'} × {detail.quantity}</span>
-                  <span className="font-medium">৳{(detail.price * detail.quantity).toFixed(2)}</span>
+                  <span className="font-medium">৳{detail.subtotal?.toFixed(2)}</span>
                 </div>
               ))}
             </div>
@@ -587,35 +573,10 @@ export default function App() {
             </div>
           )}
 
-          <div className="mb-6">
-            <h3 className="font-bold text-gray-800 mb-3">Select Payment Method:</h3>
-            <div className="grid grid-cols-3 gap-3">
-              <button
-                onClick={() => selectPaymentMethod('cash')}
-                className="p-4 border-2 border-gray-300 rounded-lg hover:border-amber-500 hover:bg-amber-50 transition"
-              >
-                <div className="font-bold">Cash</div>
-              </button>
-              <button
-                onClick={() => selectPaymentMethod('card')}
-                className="p-4 border-2 border-gray-300 rounded-lg hover:border-amber-500 hover:bg-amber-50 transition"
-              >
-                <div className="font-bold">Card</div>
-              </button>
-              <button
-                onClick={() => selectPaymentMethod('mobile_banking')}
-                className="p-4 border-2 border-gray-300 rounded-lg hover:border-amber-500 hover:bg-amber-50 transition"
-              >
-                <div className="font-bold">Mobile Banking</div>
-              </button>
-            </div>
-          </div>
-
           <div className="flex gap-3">
             <button
               onClick={() => {
                 // Go back to menu to add more items
-                // Don't clear cart or activeOrder
                 setView('menu');
               }}
               className="flex-1 bg-amber-100 text-amber-700 py-3 rounded-lg font-bold hover:bg-amber-200 transition"
