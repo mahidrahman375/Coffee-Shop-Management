@@ -684,6 +684,11 @@ export default function App() {
   }
 
   if (view === 'order-success') {
+    // Debug logging
+    console.log('Full orderSummary:', orderSummary);
+    console.log('Order total_amount:', orderSummary?.total_amount);
+    console.log('Order details:', orderSummary?.order_details);
+    
     // Merge duplicate items in order summary
     const mergedOrderDetails = orderSummary?.order_details?.reduce((acc, detail) => {
       const existing = acc.find(d => d.menu_items?.name === detail.menu_items?.name);
@@ -696,8 +701,15 @@ export default function App() {
       return acc;
     }, []) || [];
 
+    // Calculate the actual total from merged items
     const actualTotal = mergedOrderDetails.reduce((sum, detail) => 
       sum + (detail.subtotal || (detail.price * detail.quantity)), 0);
+    
+    // Use either orderSummary.total_amount or calculated total
+    const displayTotal = orderSummary?.total_amount || actualTotal;
+    
+    console.log('Calculated total from items:', actualTotal);
+    console.log('Final display total:', displayTotal);
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-50 flex items-center justify-center p-6">
@@ -724,7 +736,7 @@ export default function App() {
                 const subtotal = detail.subtotal || (detail.price * detail.quantity);
                 return (
                   <div key={idx} className="flex justify-between items-center text-gray-700">
-                    <div>
+                    <div className="flex-1">
                       <div className="font-medium">{detail.menu_items?.name || 'Item'} × {detail.quantity}</div>
                     </div>
                     <div className="font-bold text-amber-600">৳{subtotal.toFixed(2)}</div>
@@ -734,7 +746,9 @@ export default function App() {
             </div>
             <div className="flex justify-between text-xl font-bold text-gray-800 mt-4 pt-4 border-t">
               <span>Total:</span>
-              <span className="text-amber-600">৳{actualTotal.toFixed(2)}</span>
+              <span className="text-amber-600">
+                {displayTotal && !isNaN(displayTotal) ? `৳${displayTotal.toFixed(2)}` : '৳0.00'}
+              </span>
             </div>
           </div>
 
@@ -756,7 +770,8 @@ export default function App() {
                       quantity: detail.quantity,
                       price: detail.price,
                       subtotal: detail.subtotal || (detail.price * detail.quantity)
-                    }))
+                    })),
+                    total: displayTotal && !isNaN(displayTotal) ? displayTotal : actualTotal
                   }} 
                   onDownload={() => {
                     alert('Receipt downloaded successfully!');
