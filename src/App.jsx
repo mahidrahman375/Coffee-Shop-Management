@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { ShoppingCart, Plus, Minus, Trash2, Coffee, CheckCircle } from 'lucide-react';
 import ReceiptGenerator from './ReceiptGenerator.jsx';
 import TopItems from './TopItems.jsx';
-import { supabase } from './lib/supabase'; // Import from single source
-import { jsPDF } from 'jspdf'; 
+import { supabase } from './lib/supabase';
+import { jsPDF } from 'jspdf';
 
 export default function App() {
   const [view, setView] = useState('table-selection');
@@ -41,26 +41,49 @@ export default function App() {
   };
 
   const selectTable = async (table) => {
-    const { data: existingOrder } = await supabase
-      .from('orders')
-      .select('*, order_details(*)')
-      .eq('table_id', table.id)
-      .eq('status', 'pending')
-      .single();
+    try {
+      const { data: existingOrder, error } = await supabase
+        .from('orders')
+        .select(`
+          *,
+          order_details(
+            *,
+            menu_items(*)
+          )
+        `)
+        .eq('table_id', table.id)
+        .eq('status', 'pending')
+        .single();
 
-    setSelectedTable(table);
-    
-    if (existingOrder) {
-      setActiveOrder(existingOrder);
-      const cartItems = existingOrder.order_details.map(detail => ({
-        ...menuItems.find(item => item.id === detail.menu_item_id),
-        quantity: detail.quantity,
-        order_detail_id: detail.id
-      }));
-      setCart(cartItems.filter(item => item.id));
+      setSelectedTable(table);
+      
+      if (existingOrder && !error) {
+        setActiveOrder(existingOrder);
+        // Load existing items into cart
+        const cartItems = existingOrder.order_details.map(detail => ({
+          id: detail.menu_item_id,
+          name: detail.menu_items?.name,
+          price: detail.price,
+          quantity: detail.quantity,
+          order_detail_id: detail.id
+        })).filter(item => item.id);
+        
+        setCart(cartItems);
+      } else {
+        // No existing order, clear cart
+        setCart([]);
+        setActiveOrder(null);
+      }
+      
+      setView('menu');
+      
+    } catch (error) {
+      console.error('Error loading table order:', error);
+      setSelectedTable(table);
+      setCart([]);
+      setActiveOrder(null);
+      setView('menu');
     }
-    
-    setView('menu');
   };
 
   const addToCart = (item) => {
@@ -70,7 +93,11 @@ export default function App() {
         i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i
       ));
     } else {
-      setCart([...cart, { ...item, quantity: 1 }]);
+      setCart([...cart, { 
+        ...item, 
+        quantity: 1,
+        order_detail_id: null // Will be set if updating existing item
+      }]);
     }
   };
 
@@ -151,6 +178,8 @@ export default function App() {
           .from('tables')
           .update({ status: 'occupied' })
           .eq('id', selectedTable.id);
+          
+        setActiveOrder(newOrder);
       } else {
         // Update existing order
         await supabase
@@ -162,29 +191,37 @@ export default function App() {
           .eq('id', orderId);
       }
 
-      // Clear existing order details if updating
-      if (activeOrder && activeOrder.order_details?.length > 0) {
-        await supabase
-          .from('order_details')
-          .delete()
-          .eq('order_id', orderId);
+      // Handle order details - add new items or update existing ones
+      for (const item of cart) {
+        // Check if item already exists in this order
+        const existingDetail = activeOrder?.order_details?.find(
+          detail => detail.menu_item_id === item.id
+        );
+        
+        if (existingDetail && item.order_detail_id) {
+          // Update existing item
+          await supabase
+            .from('order_details')
+            .update({
+              quantity: item.quantity,
+              subtotal: item.price * item.quantity,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', item.order_detail_id);
+        } else {
+          // Add new item
+          await supabase
+            .from('order_details')
+            .insert({
+              order_id: orderId,
+              menu_item_id: item.id,
+              quantity: item.quantity,
+              price: item.price,
+              subtotal: item.price * item.quantity,
+              created_at: new Date().toISOString()
+            });
+        }
       }
-
-      // Add all items from cart
-      const orderDetailsPromises = cart.map(item => {
-        return supabase
-          .from('order_details')
-          .insert({
-            order_id: orderId,
-            menu_item_id: item.id,
-            quantity: item.quantity,
-            price: item.price,
-            subtotal: item.price * item.quantity,
-            created_at: new Date().toISOString()
-          });
-      });
-
-      await Promise.all(orderDetailsPromises);
 
       // Deduct ingredients for new orders only
       if (isNewOrder) {
@@ -246,8 +283,9 @@ export default function App() {
       
       setGeneratedReceipt(receiptData);
       setView('order-success');
+      
+      // Clear cart but keep activeOrder for future updates
       setCart([]);
-      setActiveOrder(null);
       
       // Clean up processing flag
       localStorage.removeItem(processingKey);
@@ -335,6 +373,11 @@ export default function App() {
               <div>
                 <h1 className="text-2xl font-bold text-gray-800">Table {selectedTable.table_number}</h1>
                 <p className="text-sm text-gray-600">Browse our menu and add items to your cart</p>
+                {activeOrder && (
+                  <p className="text-xs text-amber-600 mt-1">
+                    ✓ Order #{activeOrder.id} in progress - Adding items to existing order
+                  </p>
+                )}
               </div>
               <button
                 onClick={() => setView('table-selection')}
@@ -375,6 +418,11 @@ export default function App() {
                 <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
                   <ShoppingCart className="w-5 h-5" />
                   Your Cart ({cart.length} items)
+                  {activeOrder && (
+                    <span className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded">
+                      Updating Order #{activeOrder.id}
+                    </span>
+                  )}
                 </h3>
                 <div className="text-2xl font-bold text-amber-600">
                   Total: ৳{calculateTotal().toFixed(2)}
@@ -387,6 +435,9 @@ export default function App() {
                     <div className="flex-1">
                       <div className="font-medium text-gray-800">{item.name}</div>
                       <div className="text-sm text-gray-600">৳{item.price} each</div>
+                      {item.order_detail_id && (
+                        <div className="text-xs text-green-600">✓ Already in order</div>
+                      )}
                     </div>
                     <div className="flex items-center gap-3">
                       <button
@@ -421,7 +472,9 @@ export default function App() {
                 disabled={isProcessing}
                 className="w-full bg-amber-500 text-white py-4 rounded-lg font-bold text-lg hover:bg-amber-600 transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isProcessing ? 'Processing...' : `Place Order - ৳${calculateTotal().toFixed(2)}`}
+                {isProcessing ? 'Processing...' : 
+                 activeOrder ? `Update Order - ৳${calculateTotal().toFixed(2)}` : 
+                 `Place Order - ৳${calculateTotal().toFixed(2)}`}
               </button>
             </div>
           </div>
@@ -430,17 +483,21 @@ export default function App() {
     );
   }
 
-  
   if (view === 'order-success') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-50 flex items-center justify-center p-6">
         <div className="max-w-2xl w-full bg-white rounded-2xl shadow-xl p-8">
           <div className="text-center mb-6">
             <CheckCircle className="w-20 h-20 text-green-500 mx-auto mb-4" />
-            <h1 className="text-3xl font-bold text-gray-800 mb-2">Order Placed Successfully!</h1>
+            <h1 className="text-3xl font-bold text-gray-800 mb-2">Order {activeOrder ? 'Updated' : 'Placed'} Successfully!</h1>
             <p className="text-gray-600">Table {selectedTable.table_number} • Order #{orderSummary?.id}</p>
+            {activeOrder && (
+              <p className="text-sm text-amber-600 mt-2">
+                ✓ Your order has been updated with additional items
+              </p>
+            )}
           </div>
-  
+
           <div className="border-t border-b border-gray-200 py-4 mb-6">
             <h3 className="font-bold text-gray-800 mb-3">Order Summary:</h3>
             <div className="space-y-2">
@@ -456,7 +513,7 @@ export default function App() {
               <span className="text-amber-600">৳{orderSummary?.total_amount?.toFixed(2)}</span>
             </div>
           </div>
-  
+
           {/* Clean Receipt Download Section */}
           {generatedReceipt && (
             <div className="mb-6 p-4 bg-blue-50 rounded-lg">
@@ -477,7 +534,7 @@ export default function App() {
               </div>
             </div>
           )}
-  
+
           <div className="mb-6">
             <h3 className="font-bold text-gray-800 mb-3">Select Payment Method:</h3>
             <div className="grid grid-cols-3 gap-3">
@@ -501,12 +558,13 @@ export default function App() {
               </button>
             </div>
           </div>
-  
+
           <div className="flex gap-3">
             <button
               onClick={() => {
+                // Go back to menu to add more items
+                // Don't clear cart or activeOrder
                 setView('menu');
-                setCart([]);
               }}
               className="flex-1 bg-amber-100 text-amber-700 py-3 rounded-lg font-bold hover:bg-amber-200 transition"
             >
@@ -516,7 +574,7 @@ export default function App() {
               onClick={startNewOrder}
               className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-lg font-bold hover:bg-gray-300 transition"
             >
-              Finish & New Order
+              {activeOrder ? 'Complete Order' : 'Finish & New Order'}
             </button>
           </div>
         </div>
