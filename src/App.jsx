@@ -284,51 +284,82 @@ export default function App() {
           .eq('id', selectedTable.id);
           
         setActiveOrder(newOrder);
-      } else {
-        const { error: updateError } = await supabase
-          .from('orders')
-          .update({ 
-            total_amount: calculatedTotal,
-            payment_method: selectedPaymentMethod
-          })
-          .eq('id', orderId);
-
-        if (updateError) {
-          console.error('Order update error:', updateError);
-          throw new Error(`Order update failed: ${updateError.message}`);
-        }
       }
 
-      // Delete all existing order details and re-add them (fresh update)
-      if (activeOrder) {
-        await supabase
-          .from('order_details')
-          .delete()
-          .eq('order_id', orderId);
+      // Get existing order details to calculate new total
+      const { data: existingDetails } = await supabase
+        .from('order_details')
+        .select('*')
+        .eq('order_id', orderId);
+
+      // For existing order: only add NEW items (items without order_detail_id)
+      // Update existing items (items with order_detail_id)
+      const itemsToInsert = cart.filter(item => !item.order_detail_id);
+      const itemsToUpdate = cart.filter(item => item.order_detail_id);
+
+      // Insert new items
+      if (itemsToInsert.length > 0) {
+        const insertPromises = itemsToInsert.map(async (item) => {
+          const subtotal = item.price * item.quantity;
+          
+          const { error: insertDetailError } = await supabase
+            .from('order_details')
+            .insert({
+              order_id: orderId,
+              menu_item_id: item.id,
+              quantity: item.quantity,
+              price: item.price,
+              subtotal: subtotal,
+              created_at: new Date().toISOString()
+            });
+
+          if (insertDetailError) {
+            console.error('Insert detail error:', insertDetailError);
+            throw new Error(`Failed to add item: ${insertDetailError.message}`);
+          }
+        });
+
+        await Promise.all(insertPromises);
       }
 
-      // Add all items fresh
-      const orderDetailsPromises = cart.map(async (item) => {
-        const subtotal = item.price * item.quantity;
-        
-        const { error: insertDetailError } = await supabase
-          .from('order_details')
-          .insert({
-            order_id: orderId,
-            menu_item_id: item.id,
-            quantity: item.quantity,
-            price: item.price,
-            subtotal: subtotal,
-            created_at: new Date().toISOString()
-          });
+      // Update existing items
+      if (itemsToUpdate.length > 0) {
+        const updatePromises = itemsToUpdate.map(async (item) => {
+          const subtotal = item.price * item.quantity;
+          
+          const { error: updateDetailError } = await supabase
+            .from('order_details')
+            .update({
+              quantity: item.quantity,
+              subtotal: subtotal
+            })
+            .eq('id', item.order_detail_id);
 
-        if (insertDetailError) {
-          console.error('Insert detail error:', insertDetailError);
-          throw new Error(`Failed to add item: ${insertDetailError.message}`);
-        }
-      });
+          if (updateDetailError) {
+            console.error('Update detail error:', updateDetailError);
+            throw new Error(`Failed to update item: ${updateDetailError.message}`);
+          }
+        });
 
-      await Promise.all(orderDetailsPromises);
+        await Promise.all(updatePromises);
+      }
+
+      // Calculate new total from ALL order details (existing + new)
+      const { data: allDetails } = await supabase
+        .from('order_details')
+        .select('subtotal')
+        .eq('order_id', orderId);
+
+      const newTotal = allDetails?.reduce((sum, detail) => sum + (detail.subtotal || 0), 0) || calculatedTotal;
+
+      // Update order with new total and payment method
+      await supabase
+        .from('orders')
+        .update({ 
+          total_amount: newTotal,
+          payment_method: selectedPaymentMethod
+        })
+        .eq('id', orderId);
 
       const { data: finalOrder, error: fetchError } = await supabase
         .from('orders')
@@ -744,6 +775,8 @@ export default function App() {
     );
   }
 
+  // ... [ALL YOUR EXISTING CODE ABOVE IS CORRECT, KEEP IT AS IS]
+
   if (view === 'order-success') {
     // Merge duplicate items in order summary
     const mergedOrderDetails = orderSummary?.order_details?.reduce((acc, detail) => {
@@ -862,8 +895,8 @@ export default function App() {
           </div>
         </div>
       </div>
-    );
+    ); // <-- THIS WAS MISSING
   }
 
-  return null;
+  return null; // <-- This is the final return
 }
