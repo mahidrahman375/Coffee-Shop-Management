@@ -14,6 +14,11 @@ export default function ReceiptGenerator({ orderData, onDownload, onError }) {
         throw new Error('Invalid order data');
       }
 
+      const total = parseFloat(orderData.total) || 0;
+      if (isNaN(total) || total <= 0) {
+        throw new Error('Invalid total amount');
+      }
+
       // Create PDF
       const doc = new jsPDF();
       
@@ -75,7 +80,7 @@ export default function ReceiptGenerator({ orderData, onDownload, onError }) {
       yPos += 10;
       doc.setFontSize(14);
       doc.setTextColor(0, 0, 0);
-      doc.text(`TOTAL: ৳${(parseFloat(orderData.total) || 0).toFixed(2)}`, 150, yPos);
+      doc.text(`TOTAL: ৳${total.toFixed(2)}`, 150, yPos);
       
       // Footer
       yPos += 20;

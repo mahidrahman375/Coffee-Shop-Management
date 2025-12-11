@@ -846,19 +846,33 @@ export default function App() {
                     Order #{generatedReceipt.orderId} • {mergedOrderDetails.length} items
                   </p>
                 </div>
+                // In the order-success view of App.jsx, update the ReceiptGenerator props:
+
                 <ReceiptGenerator 
                   orderData={{
-                    ...generatedReceipt,
-                    items: mergedOrderDetails.map(detail => ({
-                      name: detail.menu_items?.name || 'Item',
-                      quantity: detail.quantity,
-                      price: detail.price,
-                      subtotal: detail.subtotal || (detail.price * detail.quantity)
-                    })),
-                    total: displayTotal && !isNaN(displayTotal) ? displayTotal : actualTotal
+                    orderId: orderSummary?.id || generatedReceipt?.orderId || 'N/A',
+                    tableNumber: selectedTable?.table_number || 'N/A',
+                    items: mergedOrderDetails.map(detail => {
+                      const quantity = detail.quantity || 1;
+                      const price = parseFloat(detail.price) || 0;
+                      const subtotal = parseFloat(detail.subtotal) || (price * quantity);
+                      
+                      return {
+                        name: detail.menu_items?.name || 'Item',
+                        quantity: quantity,
+                        price: price,
+                        subtotal: subtotal
+                      };
+                    }),
+                    total: displayTotal,
+                    paymentMethod: orderSummary?.payment_method || selectedPaymentMethod || 'cash',
+                    date: new Date(orderSummary?.created_at || new Date()).toLocaleString()
                   }} 
                   onDownload={() => {
                     alert('Receipt downloaded successfully!');
+                  }}
+                  onError={(errorMessage) => {
+                    setError(errorMessage);
                   }}
                 />
               </div>
