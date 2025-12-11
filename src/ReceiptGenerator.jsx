@@ -55,7 +55,7 @@ export default function ReceiptGenerator({ orderData, onDownload, onError }) {
       
       let yPos = 105;
       
-      // Add items
+      // Add items - Use BDT instead of symbol
       orderData.items.forEach((item, index) => {
         if (index > 0) yPos += 10;
         
@@ -70,8 +70,9 @@ export default function ReceiptGenerator({ orderData, onDownload, onError }) {
         const price = parseFloat(item.price) || 0;
         const subtotal = parseFloat(item.subtotal) || (price * (item.quantity || 1));
         
-        doc.text(`৳${price.toFixed(2)}`, 140, yPos);
-        doc.text(`৳${subtotal.toFixed(2)}`, 170, yPos);
+        // Use "BDT" instead of symbol
+        doc.text(`BDT ${price.toFixed(2)}`, 140, yPos);
+        doc.text(`BDT ${subtotal.toFixed(2)}`, 170, yPos);
         
         yPos += 10;
       });
@@ -80,7 +81,7 @@ export default function ReceiptGenerator({ orderData, onDownload, onError }) {
       yPos += 10;
       doc.setFontSize(14);
       doc.setTextColor(0, 0, 0);
-      doc.text(`TOTAL: ৳${total.toFixed(2)}`, 150, yPos);
+      doc.text(`TOTAL: BDT ${total.toFixed(2)}`, 150, yPos);
       
       // Footer
       yPos += 20;
