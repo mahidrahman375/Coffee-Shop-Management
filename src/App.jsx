@@ -775,8 +775,6 @@ export default function App() {
     );
   }
 
-  // ... [ALL YOUR EXISTING CODE ABOVE IS CORRECT, KEEP IT AS IS]
-
   if (view === 'order-success') {
     // Merge duplicate items in order summary
     const mergedOrderDetails = orderSummary?.order_details?.reduce((acc, detail) => {
@@ -850,30 +848,17 @@ export default function App() {
                 </div>
                 <ReceiptGenerator 
                   orderData={{
-                    orderId: orderSummary?.id || 'N/A',
-                    tableNumber: selectedTable?.table_number || 'N/A',
-                    items: mergedOrderDetails.map(detail => {
-                      const quantity = detail.quantity || 1;
-                      const price = parseFloat(detail.price) || 0;
-                      const subtotal = parseFloat(detail.subtotal) || (price * quantity);
-                      
-                      return {
-                        name: detail.menu_items?.name || 'Item',
-                        quantity: quantity,
-                        price: price,
-                        subtotal: subtotal
-                      };
-                    }),
-                    total: displayTotal,
-                    paymentMethod: orderSummary?.payment_method || selectedPaymentMethod || 'cash',
-                    date: new Date(orderSummary?.created_at || new Date()).toLocaleString()
+                    ...generatedReceipt,
+                    items: mergedOrderDetails.map(detail => ({
+                      name: detail.menu_items?.name || 'Item',
+                      quantity: detail.quantity,
+                      price: detail.price,
+                      subtotal: detail.subtotal || (detail.price * detail.quantity)
+                    })),
+                    total: displayTotal && !isNaN(displayTotal) ? displayTotal : actualTotal
                   }} 
                   onDownload={() => {
-                    // Success callback
-                    console.log('Receipt downloaded successfully');
-                  }}
-                  onError={(errorMessage) => {
-                    setError(`Receipt generation failed: ${errorMessage}`);
+                    alert('Receipt downloaded successfully!');
                   }}
                 />
               </div>
@@ -908,8 +893,5 @@ export default function App() {
           </div>
         </div>
       </div>
-    ); // <-- THIS WAS MISSING
-  }
-
-  return null; // <-- This is the final return
+    )}
 }
