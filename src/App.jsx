@@ -277,6 +277,7 @@ export default function App() {
       setOrderSummary(finalOrder);
       
       // Generate receipt data
+      // In placeOrder function in App.jsx:
       const receiptData = {
         orderId: finalOrder.id,
         tableNumber: selectedTable.table_number,
@@ -287,7 +288,7 @@ export default function App() {
           subtotal: detail.subtotal
         })),
         total: finalOrder.total_amount,
-        paymentMethod: selectedPaymentMethod,
+        paymentMethod: selectedPaymentMethod, // This is important!
         date: new Date(finalOrder.created_at).toLocaleString()
       };
       

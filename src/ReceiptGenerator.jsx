@@ -10,9 +10,6 @@ export default function ReceiptGenerator({ orderData, onDownload }) {
       // Create PDF document
       const doc = new jsPDF();
       
-      // Add a custom font or use basic ASCII characters
-      // For Taka symbol, we'll use "BDT" abbreviation instead
-      
       // Header
       doc.setFontSize(20);
       doc.setTextColor(139, 69, 19); // Brown color
@@ -29,18 +26,24 @@ export default function ReceiptGenerator({ orderData, onDownload }) {
       doc.text(`Table: ${orderData.tableNumber || 'N/A'}`, 20, 55);
       doc.text(`Date: ${orderData.date || new Date().toLocaleString()}`, 20, 65);
       
+      // Add payment method if available
+      if (orderData.paymentMethod) {
+        doc.text(`Payment: ${orderData.paymentMethod.replace('_', ' ').toUpperCase()}`, 20, 75);
+      }
+      
       // Separator line
       doc.setDrawColor(139, 69, 19);
-      doc.line(20, 72, 190, 72);
+      doc.line(20, orderData.paymentMethod ? 82 : 72, 190, orderData.paymentMethod ? 82 : 72);
       
       // Items header
       doc.setFontSize(11);
-      doc.text('Item', 20, 82);
-      doc.text('Qty', 100, 82);
-      doc.text('Price', 130, 82);
-      doc.text('Total', 170, 82);
+      const startY = orderData.paymentMethod ? 92 : 82;
+      doc.text('Item', 20, startY);
+      doc.text('Qty', 100, startY);
+      doc.text('Price', 130, startY);
+      doc.text('Total', 170, startY);
       
-      let yPos = 92;
+      let yPos = startY + 10;
       
       // Add items
       orderData.items.forEach((item, index) => {
