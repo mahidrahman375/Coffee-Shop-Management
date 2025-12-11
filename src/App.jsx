@@ -404,15 +404,15 @@ export default function App() {
       const receiptData = {
         orderId: finalOrder.id,
         tableNumber: selectedTable.table_number,
-        items: orderWithCalculatedTotals.order_details.map(detail => ({
+        items: mergedDetails.map(detail => ({
           name: detail.menu_items?.name || 'Item',
           quantity: detail.quantity,
           price: detail.price,
           subtotal: detail.subtotal || (detail.price * detail.quantity)
         })),
-        total: orderWithCalculatedTotals.total_amount,
+        total: newTotal,
         paymentMethod: selectedPaymentMethod,
-        date: new Date(orderWithCalculatedTotals.created_at).toLocaleString()
+        date: new Date(finalOrder.created_at).toLocaleString()
       };
       
       setGeneratedReceipt(receiptData);
@@ -630,7 +630,7 @@ export default function App() {
                     <h3 className="text-xl font-bold text-gray-800 mb-2">{item.name}</h3>
                     <p className="text-gray-600 text-sm mb-4">{item.description}</p>
                     <div className="flex items-center justify-between">
-                      <span className="text-2xl font-bold text-amber-600">৳{item.price}</span>
+                      <span className="text-2xl font-bold text-amber-600">BDT {item.price}</span>
                       <button
                         onClick={() => addToCart(item)}
                         className="bg-amber-500 text-white px-4 py-2 rounded-lg hover:bg-amber-600 transition"
@@ -677,7 +677,7 @@ export default function App() {
                     </h3>
                   </div>
                   <div className="text-2xl font-bold text-amber-600">
-                    Total: ৳{calculateTotal().toFixed(2)}
+                    Total: BDT {calculateTotal().toFixed(2)}
                   </div>
                 </div>
 
@@ -688,7 +688,7 @@ export default function App() {
                       <div key={item.id} className="flex items-center justify-between bg-gray-50 p-3 rounded-lg">
                         <div className="flex-1">
                           <div className="font-medium text-gray-800">{item.name}</div>
-                          <div className="text-sm text-gray-600">৳{item.price} each</div>
+                          <div className="text-sm text-gray-600">BDT {item.price} each</div>
                           {item.order_detail_id && (
                             <div className="text-xs text-green-600">✓ Already in order</div>
                           )}
@@ -714,7 +714,7 @@ export default function App() {
                             <Trash2 className="w-4 h-4" />
                           </button>
                           <div className="w-20 text-right font-bold text-gray-800">
-                            ৳{(item.price * item.quantity).toFixed(2)}
+                            BDT {(item.price * item.quantity).toFixed(2)}
                           </div>
                         </div>
                       </div>
@@ -763,8 +763,8 @@ export default function App() {
                   } ${isProcessing ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   {isProcessing ? 'Processing...' : 
-                   activeOrder ? `Update Order - ৳${calculateTotal().toFixed(2)}` : 
-                   selectedPaymentMethod ? `Place Order - ৳${calculateTotal().toFixed(2)}` :
+                   activeOrder ? `Update Order - BDT ${calculateTotal().toFixed(2)}` : 
+                   selectedPaymentMethod ? `Place Order - BDT ${calculateTotal().toFixed(2)}` :
                    'Select Payment Method First'}
                 </button>
               </div>
@@ -823,7 +823,7 @@ export default function App() {
                     <div className="flex-1">
                       <div className="font-medium">{detail.menu_items?.name || 'Item'} × {detail.quantity}</div>
                     </div>
-                    <div className="font-bold text-amber-600">৳{subtotal.toFixed(2)}</div>
+                    <div className="font-bold text-amber-600">BDT {subtotal.toFixed(2)}</div>
                   </div>
                 );
               })}
@@ -831,7 +831,7 @@ export default function App() {
             <div className="flex justify-between text-xl font-bold text-gray-800 mt-4 pt-4 border-t">
               <span>Total:</span>
               <span className="text-amber-600">
-                {displayTotal && !isNaN(displayTotal) ? `৳${displayTotal.toFixed(2)}` : '৳0.00'}
+                {displayTotal && !isNaN(displayTotal) ? `BDT ${displayTotal.toFixed(2)}` : 'BDT 0.00'}
               </span>
             </div>
           </div>
@@ -846,33 +846,19 @@ export default function App() {
                     Order #{generatedReceipt.orderId} • {mergedOrderDetails.length} items
                   </p>
                 </div>
-                // In the order-success view of App.jsx, update the ReceiptGenerator props:
-
                 <ReceiptGenerator 
                   orderData={{
-                    orderId: orderSummary?.id || generatedReceipt?.orderId || 'N/A',
-                    tableNumber: selectedTable?.table_number || 'N/A',
-                    items: mergedOrderDetails.map(detail => {
-                      const quantity = detail.quantity || 1;
-                      const price = parseFloat(detail.price) || 0;
-                      const subtotal = parseFloat(detail.subtotal) || (price * quantity);
-                      
-                      return {
-                        name: detail.menu_items?.name || 'Item',
-                        quantity: quantity,
-                        price: price,
-                        subtotal: subtotal
-                      };
-                    }),
-                    total: displayTotal,
-                    paymentMethod: orderSummary?.payment_method || selectedPaymentMethod || 'cash',
-                    date: new Date(orderSummary?.created_at || new Date()).toLocaleString()
+                    ...generatedReceipt,
+                    items: mergedOrderDetails.map(detail => ({
+                      name: detail.menu_items?.name || 'Item',
+                      quantity: detail.quantity,
+                      price: detail.price,
+                      subtotal: detail.subtotal || (detail.price * detail.quantity)
+                    })),
+                    total: displayTotal && !isNaN(displayTotal) ? displayTotal : actualTotal
                   }} 
                   onDownload={() => {
                     alert('Receipt downloaded successfully!');
-                  }}
-                  onError={(errorMessage) => {
-                    setError(errorMessage);
                   }}
                 />
               </div>
@@ -907,5 +893,8 @@ export default function App() {
           </div>
         </div>
       </div>
-    )}
+    );
+  }
+
+  return null;
 }
