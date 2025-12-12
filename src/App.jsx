@@ -579,9 +579,9 @@ export default function App() {
             ))}
           </div>
           
-          <div className="mt-12">
+          {/* <div className="mt-12">
             <TopItems />
-          </div>
+          </div> */}
         </div>
       </div>
     );
@@ -640,6 +640,12 @@ export default function App() {
                 ))}
               </div>
             </div>
+          </div>
+
+
+          //Top items
+          <div className="mt-12">
+            <TopItems />
           </div>
 
           {/* Fixed Right Sidebar Cart */}
