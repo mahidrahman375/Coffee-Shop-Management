@@ -588,8 +588,6 @@ export default function App() {
   }
 
   if (view === 'menu') {
-    const cartHeight = cart.length > 0 ? (isCartExpanded ? 400 : 200) : 0;
-
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col">
         <ErrorAlert />
@@ -617,160 +615,154 @@ export default function App() {
           </div>
         </div>
 
-        {/* Menu Items - Scrollable */}
-        <div 
-          className="flex-1 overflow-y-auto pb-4"
-          style={{ paddingBottom: `${cartHeight}px` }}
-        >
-          <div className="max-w-7xl mx-auto px-4 py-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {menuItems.map(item => (
-                <div key={item.id} className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition">
-                  <div className="p-6">
-                    <h3 className="text-xl font-bold text-gray-800 mb-2">{item.name}</h3>
-                    <p className="text-gray-600 text-sm mb-4">{item.description}</p>
-                    <div className="flex items-center justify-between">
-                      <span className="text-2xl font-bold text-amber-600">BDT {item.price}</span>
-                      <button
-                        onClick={() => addToCart(item)}
-                        className="bg-amber-500 text-white px-4 py-2 rounded-lg hover:bg-amber-600 transition"
-                      >
-                        Add to Cart
-                      </button>
+        {/* Main Content Area */}
+        <div className="flex-1 flex">
+          {/* Menu Items - Left Side */}
+          <div className={`flex-1 overflow-y-auto ${cart.length > 0 ? 'pr-96' : ''}`}>
+            <div className="max-w-7xl mx-auto px-4 py-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {menuItems.map(item => (
+                  <div key={item.id} className="bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition">
+                    <div className="p-6">
+                      <h3 className="text-xl font-bold text-gray-800 mb-2">{item.name}</h3>
+                      <p className="text-gray-600 text-sm mb-4">{item.description}</p>
+                      <div className="flex items-center justify-between">
+                        <span className="text-2xl font-bold text-amber-600">BDT {item.price}</span>
+                        <button
+                          onClick={() => addToCart(item)}
+                          className="bg-amber-500 text-white px-4 py-2 rounded-lg hover:bg-amber-600 transition"
+                        >
+                          Add to Cart
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Fixed Bottom Cart */}
-        {cart.length > 0 && (
-          <div 
-            ref={cartRef}
-            className="fixed bottom-0 left-0 right-0 bg-white border-t-2 border-amber-200 shadow-xl transition-all duration-300"
-            style={{ 
-              height: `${cartHeight}px`,
-              transform: 'translateY(0)'
-            }}
-          >
-            <div className="h-full flex flex-col">
-              <div className="px-4 py-4 flex-1 overflow-y-auto">
+          {/* Fixed Right Sidebar Cart */}
+          {cart.length > 0 && (
+            <div 
+              ref={cartRef}
+              className="fixed right-0 top-[73px] bottom-0 w-96 bg-white border-l-2 border-amber-200 shadow-xl overflow-hidden"
+            >
+              <div className="h-full flex flex-col">
                 {/* Cart Header */}
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={() => setIsCartExpanded(!isCartExpanded)}
-                      className="text-gray-500 hover:text-gray-700"
-                    >
-                      {isCartExpanded ? <ChevronDown className="w-5 h-5" /> : <ChevronUp className="w-5 h-5" />}
-                    </button>
-                    <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-                      <ShoppingCart className="w-5 h-5" />
-                      Your Cart ({cart.reduce((sum, item) => sum + item.quantity, 0)} items)
-                      {activeOrder && (
-                        <span className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded">
-                          Updating Order #{activeOrder.id}
-                        </span>
-                      )}
-                    </h3>
-                  </div>
-                  <div className="text-2xl font-bold text-amber-600">
-                    Total: BDT {calculateTotal().toFixed(2)}
-                  </div>
+                <div className="px-4 py-4 border-b border-gray-200">
+                  <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                    <ShoppingCart className="w-5 h-5" />
+                    Your Cart ({cart.reduce((sum, item) => sum + item.quantity, 0)} items)
+                  </h3>
+                  {activeOrder && (
+                    <p className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded mt-2 inline-block">
+                      Updating Order #{activeOrder.id}
+                    </p>
+                  )}
                 </div>
 
-                {/* Cart Items */}
-                {isCartExpanded && (
-                  <div className="space-y-2 mb-4 max-h-64 overflow-y-auto pr-2">
+                {/* Cart Items - Scrollable */}
+                <div className="flex-1 overflow-y-auto px-4 py-4">
+                  <div className="space-y-3">
                     {cart.map(item => (
-                      <div key={item.id} className="flex items-center justify-between bg-gray-50 p-3 rounded-lg">
-                        <div className="flex-1">
-                          <div className="font-medium text-gray-800">{item.name}</div>
-                          <div className="text-sm text-gray-600">BDT {item.price} each</div>
-                          {item.order_detail_id && (
-                            <div className="text-xs text-green-600">✓ Already in order</div>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <button
-                            onClick={() => updateQuantity(item.id, -1)}
-                            className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center hover:bg-gray-300"
-                          >
-                            <Minus className="w-4 h-4" />
-                          </button>
-                          <span className="w-8 text-center font-bold">{item.quantity}</span>
-                          <button
-                            onClick={() => updateQuantity(item.id, 1)}
-                            className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center hover:bg-gray-300"
-                          >
-                            <Plus className="w-4 h-4" />
-                          </button>
+                      <div key={item.id} className="bg-gray-50 p-3 rounded-lg">
+                        <div className="flex justify-between items-start mb-2">
+                          <div className="flex-1">
+                            <div className="font-medium text-gray-800">{item.name}</div>
+                            <div className="text-sm text-gray-600">BDT {item.price} each</div>
+                            {item.order_detail_id && (
+                              <div className="text-xs text-green-600 mt-1">✓ Already in order</div>
+                            )}
+                          </div>
                           <button
                             onClick={() => removeFromCart(item.id)}
-                            className="w-8 h-8 bg-red-100 text-red-600 rounded-full flex items-center justify-center hover:bg-red-200 ml-2"
+                            className="w-8 h-8 bg-red-100 text-red-600 rounded-full flex items-center justify-center hover:bg-red-200"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
-                          <div className="w-20 text-right font-bold text-gray-800">
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => updateQuantity(item.id, -1)}
+                              className="w-8 h-8 bg-white border border-gray-300 rounded-full flex items-center justify-center hover:bg-gray-100"
+                            >
+                              <Minus className="w-4 h-4" />
+                            </button>
+                            <span className="w-10 text-center font-bold">{item.quantity}</span>
+                            <button
+                              onClick={() => updateQuantity(item.id, 1)}
+                              className="w-8 h-8 bg-white border border-gray-300 rounded-full flex items-center justify-center hover:bg-gray-100"
+                            >
+                              <Plus className="w-4 h-4" />
+                            </button>
+                          </div>
+                          <div className="font-bold text-amber-600">
                             BDT {(item.price * item.quantity).toFixed(2)}
                           </div>
                         </div>
                       </div>
                     ))}
                   </div>
-                )}
+                </div>
 
-                {/* Payment Method */}
-                <div className="mb-4">
-                  <h4 className="font-bold text-gray-700 mb-2">Select Payment Method:</h4>
-                  <div className="grid grid-cols-3 gap-2">
-                    {['cash', 'card', 'mobile_banking'].map(method => (
-                      <button
-                        key={method}
-                        onClick={() => selectPaymentMethod(method)}
-                        className={`p-3 rounded-lg border-2 transition ${
-                          selectedPaymentMethod === method
-                            ? 'border-green-500 bg-green-50 text-green-700'
-                            : 'border-gray-300 hover:border-amber-500 hover:bg-amber-50'
-                        }`}
-                      >
-                        <div className="font-medium capitalize">{method.replace('_', ' ')}</div>
-                        {selectedPaymentMethod === method && (
-                          <div className="text-xs mt-1">✓ Selected</div>
-                        )}
-                      </button>
-                    ))}
+                {/* Cart Footer - Total, Payment, Order Button */}
+                <div className="border-t border-gray-200 p-4 space-y-4">
+                  {/* Total */}
+                  <div className="flex justify-between items-center text-xl font-bold">
+                    <span className="text-gray-800">Total:</span>
+                    <span className="text-amber-600">BDT {calculateTotal().toFixed(2)}</span>
                   </div>
-                  {!selectedPaymentMethod && (
-                    <p className="text-sm text-red-600 mt-2">
-                      ⚠️ Please select a payment method to place your order
-                    </p>
-                  )}
+
+                  {/* Payment Method */}
+                  <div>
+                    <h4 className="font-bold text-gray-700 mb-2 text-sm">Select Payment Method:</h4>
+                    <div className="grid grid-cols-3 gap-2">
+                      {['cash', 'card', 'mobile_banking'].map(method => (
+                        <button
+                          key={method}
+                          onClick={() => selectPaymentMethod(method)}
+                          className={`p-2 rounded-lg border-2 transition text-xs ${
+                            selectedPaymentMethod === method
+                              ? 'border-green-500 bg-green-50 text-green-700'
+                              : 'border-gray-300 hover:border-amber-500 hover:bg-amber-50'
+                          }`}
+                        >
+                          <div className="font-medium capitalize">{method.replace('_', ' ')}</div>
+                          {selectedPaymentMethod === method && (
+                            <div className="text-xs mt-1">✓</div>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                    {!selectedPaymentMethod && (
+                      <p className="text-xs text-red-600 mt-2">
+                        ⚠️ Please select a payment method
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Order Button */}
+                  <button
+                    onClick={placeOrder}
+                    disabled={isProcessing || !selectedPaymentMethod}
+                    className={`w-full py-3 rounded-lg font-bold text-lg transition ${
+                      selectedPaymentMethod
+                        ? 'bg-amber-500 text-white hover:bg-amber-600'
+                        : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    } ${isProcessing ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  >
+                    {isProcessing ? 'Processing...' : 
+                     activeOrder ? `Update Order - BDT ${calculateTotal().toFixed(2)}` : 
+                     selectedPaymentMethod ? `Place Order - BDT ${calculateTotal().toFixed(2)}` :
+                     'Select Payment First'}
+                  </button>
                 </div>
               </div>
-
-              {/* Order Button */}
-              <div className="px-4 py-4 border-t border-gray-200">
-                <button
-                  onClick={placeOrder}
-                  disabled={isProcessing || !selectedPaymentMethod}
-                  className={`w-full py-4 rounded-lg font-bold text-lg transition ${
-                    selectedPaymentMethod
-                      ? 'bg-amber-500 text-white hover:bg-amber-600'
-                      : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                  } ${isProcessing ? 'opacity-50 cursor-not-allowed' : ''}`}
-                >
-                  {isProcessing ? 'Processing...' : 
-                   activeOrder ? `Update Order - BDT ${calculateTotal().toFixed(2)}` : 
-                   selectedPaymentMethod ? `Place Order - BDT ${calculateTotal().toFixed(2)}` :
-                   'Select Payment Method First'}
-                </button>
-              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     );
   }
