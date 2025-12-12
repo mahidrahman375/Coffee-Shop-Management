@@ -2,52 +2,76 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Coffee Shop POS</title>
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+
     <style>
-      /* Loading spinner */
+      /* Global Reset */
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      /* Loading Spinner Before App Loads */
       #root:empty::before {
-        content: '';
+        content: "";
         position: fixed;
         top: 50%;
         left: 50%;
+        width: 55px;
+        height: 55px;
+        border: 6px solid #e6e6e6;
+        border-top: 6px solid #2d89ef;
+        border-radius: 50%;
         transform: translate(-50%, -50%);
-        width: 50px;
-        height: 50px;
-        border: 5px solid #f3f3f3;
-        border-top: 5px solid #3498db;
+        animation: spin 0.9s linear infinite;
+      }
+
+      @keyframes spin {
+        to {
+          transform: translate(-50%, -50%) rotate(360deg);
+        }
+      }
+
+      /* Fallback Loader */
+      .loader-wrapper {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        font-family: system-ui, sans-serif;
+      }
+
+      .loader {
+        width: 60px;
+        height: 60px;
+        border: 6px solid #e6e6e6;
+        border-top: 6px solid #2d89ef;
         border-radius: 50%;
         animation: spin 1s linear infinite;
+        margin-bottom: 18px;
       }
-      @keyframes spin {
-        0% { transform: translate(-50%, -50%) rotate(0deg); }
-        100% { transform: translate(-50%, -50%) rotate(360deg); }
+
+      .loader-text {
+        font-size: 18px;
+        color: #555;
+        letter-spacing: 0.3px;
       }
     </style>
   </head>
   <body>
     <div id="root">
-      <!-- Loading fallback -->
-      <div style="
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        text-align: center;
-      ">
-        <div style="
-          width: 60px;
-          height: 60px;
-          border: 6px solid #f3f3f3;
-          border-top: 6px solid #3498db;
-          border-radius: 50%;
-          animation: spin 1s linear infinite;
-          margin: 0 auto 20px;
-        "></div>
-        <p style="color: #666; font-size: 18px;">Loading Coffee Shop POS...</p>
+      <!-- Fallback Loader -->
+      <div class="loader-wrapper">
+        <div class="loader"></div>
+        <p class="loader-text">Loading Coffee Shop POS...</p>
       </div>
     </div>
+
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
